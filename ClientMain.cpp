@@ -51,6 +51,7 @@ int main()
         if (v["data"] == 1)
         {
             cout << "登录成功" << endl;
+            name = res;
             break;
         }
         else
@@ -66,19 +67,24 @@ int main()
         cin >> res;
         if (res == "1")
         {
+
             Json::Value v;
             v["cmd"] = OP::LIST;
+
             c.m_send(fw.write(v));
             cout << "发送列表请求" << endl;
         }
         else if (res == "2")
         {
+            cout << "输入目标用户名" << endl;
+            cin >> res;
             Json::Value v;
             cout << "请输入内容" << endl;
             cin >> msg;
             v["cmd"] = OP::SEND;
             v["data"] = msg;
             v["sender"] = name;
+            v["recver"] = res;
             c.m_send(fw.write(v));
             cout << "发送列表请求" << endl;
         }

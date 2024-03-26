@@ -105,6 +105,25 @@ int main()
                     else if (v["cmd"].asInt() == OP::SEND)
                     {
                         cout << "发送指令" << endl;
+                        Json::Value obj;
+                        string sender = v["sender"].asString();
+                        string recver = v["recver"].asString();
+                        string content = v["data"].asString();
+                        cout << "发送者：" << sender << " 接受者：" << recver << " 内容：" << content << endl;
+                        if (name_to_fd.find(recver) == name_to_fd.end())
+                        {
+                            s.m_send(evs[i].data.fd, "发送失败，用户不存在");
+                            continue;
+                        }
+                        int send_fd = name_to_fd[recver];
+                        if (s.m_send(send_fd, "接收到" + sender + "发送的消息：" + content) == false)
+                        {
+                            s.m_send(evs[i].data.fd, "发送失败");
+                        }
+                        else
+                        {
+                            s.m_send(evs[i].data.fd, "发送成功");
+                        }
                     }
                     else
                     {
