@@ -4,19 +4,89 @@
 #include <jsoncpp/json/json.h>
 #include <map>
 using namespace std;
+#define CLIENT_COUNT 1024
 Json::Reader reader;
 Json::FastWriter fw;
 map<int, string> fd_to_name;
 map<string, int> name_to_fd;
+string get_user_name(int fd)
+{
+    if (fd_to_name.find(fd) == fd_to_name.end())
+    {
+        return "";
+    }
+    return fd_to_name[fd];
+}
+int get_user_fd(const string &name)
+{
+    if (name_to_fd.find(name) == name_to_fd.end())
+    {
+        return -1;
+    }
+    return name_to_fd[name];
+}
+int epollfd = epoll_create(1);
+MSever s(5050);
+epoll_event evs[CLIENT_COUNT];
+void add_user(int fd, const string &name)
+{
+    if (fd_to_name.find(fd) == fd_to_name.end())
+    {
+        if (name_to_fd.find(name) != name_to_fd.end())
+        {
+            Json::Value obj;
+            obj["data"] = 0;
+            cout << "用户名存在" << endl;
+            s.m_send(fd, fw.write(obj));
+        }
+        else
+        {
+            fd_to_name[fd] = name;
+            name_to_fd[name] = fd;
+            Json::Value obj;
+            obj["data"] = 1;
+            cout << "登录成功" << endl;
+            s.m_send(fd, fw.write(obj));
+        }
+    }
+    else
+    {
+        Json::Value obj;
+        obj["data"] = 0;
+        cout << "重复登录" << endl;
+        s.m_send(fd, fw.write(obj));
+    }
+}
+void del_user(int fd, const string &name)
+{
+    name_to_fd.erase(name);
+    fd_to_name.erase(fd);
+    close(fd);
+    epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, 0);
+}
+void send_msg(const string &sender, const string &recver, const string &content, int sender_fd)
+{
+    if (name_to_fd.find(recver) == name_to_fd.end())
+    {
+        s.m_send(sender_fd, "发送失败，用户不存在");
+        return;
+    }
+    int send_fd = name_to_fd[recver];
+    if (s.m_send(send_fd, "接收到" + sender + "发送的消息：" + content) == false)
+    {
+        s.m_send(sender_fd, "发送失败");
+    }
+    else
+    {
+        s.m_send(sender_fd, "发送成功");
+    }
+}
 int main()
 {
-    MSever s(5050);
-    int epollfd = epoll_create(1);
     epoll_event ev;
     ev.data.fd = s.get_sever_fd();
     ev.events = EPOLLIN;
     epoll_ctl(epollfd, EPOLL_CTL_ADD, s.get_sever_fd(), &ev);
-    epoll_event evs[10];
     int listenfd = s.get_sever_fd();
     while (true)
     {
@@ -50,10 +120,7 @@ int main()
                 if (s.m_recv(evs[i].data.fd, msg, 0) == false)
                 {
                     cout << "连接断开" << endl;
-                    name_to_fd.erase(fd_to_name[evs[i].data.fd]);
-                    fd_to_name.erase(evs[i].data.fd);
-                    close(evs[i].data.fd);
-                    epoll_ctl(epollfd, EPOLL_CTL_DEL, evs[i].data.fd, 0);
+                    del_user(evs[i].data.fd, fd_to_name[evs[i].data.fd]);
                 }
                 else
                 {
@@ -64,42 +131,18 @@ int main()
                     {
                         cout << "登录指令" << endl;
                         string name = v["data"].asString();
-                        if (fd_to_name.find(evs[i].data.fd) == fd_to_name.end())
-                        {
-                            if (name_to_fd.find(name) != name_to_fd.end())
-                            {
-                                Json::Value obj;
-                                obj["data"] = 0;
-                                cout << "用户名存在" << endl;
-                                s.m_send(evs[i].data.fd, fw.write(obj));
-                            }
-                            else
-                            {
-                                fd_to_name[evs[i].data.fd] = name;
-                                name_to_fd[name] = evs[i].data.fd;
-                                Json::Value obj;
-                                obj["data"] = 1;
-                                cout << "登录成功" << endl;
-                                s.m_send(evs[i].data.fd, fw.write(obj));
-                            }
-                        }
-                        else
-                        {
-                            Json::Value obj;
-                            obj["data"] = 0;
-                            cout << "重复登录" << endl;
-                            s.m_send(evs[i].data.fd, fw.write(obj));
-                        }
+                        add_user(evs[i].data.fd, name);
                     }
                     else if (v["cmd"].asInt() == OP::LIST)
                     {
                         cout << "列表指令" << endl;
-                        string res = "";
+                        string res = "用户列表：";
                         for (auto ii = fd_to_name.begin(); ii != fd_to_name.end(); ++ii)
                         {
                             res += ii->second + " ";
                         }
                         cout << "待发送的列表：" << res << endl;
+                        res += "\n";
                         s.m_send(evs[i].data.fd, res);
                     }
                     else if (v["cmd"].asInt() == OP::SEND)
@@ -110,20 +153,7 @@ int main()
                         string recver = v["recver"].asString();
                         string content = v["data"].asString();
                         cout << "发送者：" << sender << " 接受者：" << recver << " 内容：" << content << endl;
-                        if (name_to_fd.find(recver) == name_to_fd.end())
-                        {
-                            s.m_send(evs[i].data.fd, "发送失败，用户不存在");
-                            continue;
-                        }
-                        int send_fd = name_to_fd[recver];
-                        if (s.m_send(send_fd, "接收到" + sender + "发送的消息：" + content) == false)
-                        {
-                            s.m_send(evs[i].data.fd, "发送失败");
-                        }
-                        else
-                        {
-                            s.m_send(evs[i].data.fd, "发送成功");
-                        }
+                        send_msg(sender, recver, content, evs[i].data.fd);
                     }
                     else
                     {
