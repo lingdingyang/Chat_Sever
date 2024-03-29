@@ -90,7 +90,7 @@ int main()
     int listenfd = s.get_sever_fd();
     while (true)
     {
-        int inds = epoll_wait(epollfd, evs, 10, 0);
+        int inds = epoll_wait(epollfd, evs, 10, 2*1000);
         if (inds == -1)
         {
             perror("epoll wait error");
@@ -98,6 +98,7 @@ int main()
         }
         if (inds == 0)
         {
+            cout << "time out" << endl;
             continue;
         }
         for (int i = 0; i < inds; i++)
@@ -117,7 +118,8 @@ int main()
             else
             {
                 string msg;
-                if (s.m_recv(evs[i].data.fd, msg, 0) == false)
+                bool recv_res = s.m_recv(evs[i].data.fd, msg, 0);
+                if (recv_res == false)
                 {
                     cout << "连接断开" << endl;
                     del_user(evs[i].data.fd, fd_to_name[evs[i].data.fd]);
