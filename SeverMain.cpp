@@ -3,6 +3,7 @@
 #include "Cmd.h"
 #include <jsoncpp/json/json.h>
 #include <map>
+#include "Error.h"
 using namespace std;
 #define CLIENT_COUNT 1024
 Json::Reader reader;
@@ -64,21 +65,40 @@ void del_user(int fd, const string &name)
     close(fd);
     epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, 0);
 }
+string message_to_json(const OP &cmd, const string &data, const string &sender, const string &recver, const ERROR_CODE &error = ERROR_CODE::NO_ERROR)
+{
+    Json::Value v;
+    v["op"] = cmd;
+    v["data"] = data;
+    v["sender"] = sender;
+    v["recver"] = recver;
+    v["error"] = error;
+    return fw.write(v);
+}
+void send_list(const string &sender, int sender_fd)
+{
+    string res = "";
+    for (auto ii = fd_to_name.begin(); ii != fd_to_name.end(); ++ii)
+    {
+        res += ii->second + " ";
+    }
+    s.m_send(sender_fd, message_to_json(OP::LIST, res, "sever", sender));
+}
 void send_msg(const string &sender, const string &recver, const string &content, int sender_fd)
 {
     if (name_to_fd.find(recver) == name_to_fd.end())
     {
-        s.m_send(sender_fd, "发送失败，用户不存在");
+        s.m_send(sender_fd, message_to_json(OP::SEND_BACK, content, sender, recver, ERROR_CODE::SEND_FAIL));
         return;
     }
     int send_fd = name_to_fd[recver];
-    if (s.m_send(send_fd, "接收到" + sender + "发送的消息：" + content) == false)
+    if (s.m_send(send_fd, message_to_json(OP::SEND, content, sender, recver)) == false)
     {
-        s.m_send(sender_fd, "发送失败");
+        s.m_send(sender_fd, message_to_json(OP::SEND_BACK, content, sender, recver, ERROR_CODE::SEND_FAIL));
     }
     else
     {
-        s.m_send(sender_fd, "发送成功");
+        s.m_send(sender_fd, message_to_json(OP::SEND_BACK, content, sender, recver, ERROR_CODE::NO_ERROR));
     }
 }
 int main()
@@ -90,7 +110,7 @@ int main()
     int listenfd = s.get_sever_fd();
     while (true)
     {
-        int inds = epoll_wait(epollfd, evs, 10, 2*1000);
+        int inds = epoll_wait(epollfd, evs, 10, 2 * 1000);
         if (inds == -1)
         {
             perror("epoll wait error");
@@ -138,14 +158,8 @@ int main()
                     else if (v["cmd"].asInt() == OP::LIST)
                     {
                         cout << "列表指令" << endl;
-                        string res = "用户列表：";
-                        for (auto ii = fd_to_name.begin(); ii != fd_to_name.end(); ++ii)
-                        {
-                            res += ii->second + " ";
-                        }
-                        cout << "待发送的列表：" << res << endl;
-                        res += "\n";
-                        s.m_send(evs[i].data.fd, res);
+
+                        send_list(fd_to_name[evs[i].data.fd], evs[i].data.fd);
                     }
                     else if (v["cmd"].asInt() == OP::SEND)
                     {
