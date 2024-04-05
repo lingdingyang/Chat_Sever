@@ -78,14 +78,11 @@ string message_to_json(const OP &cmd, const string &data, const string &sender, 
 void send_list(const string &sender, int sender_fd)
 {
     Json::Value v;
-    cout << fd_to_name.size() << endl;
     for (auto ii = fd_to_name.begin(); ii != fd_to_name.end(); ++ii)
     {
         v.append(ii->second);
     }
-    string str = Json::writeString(builder, v);
-    cout << str << endl;
-    s.m_send(sender_fd, message_to_json(OP::LIST, str, "sever", sender));
+    s.m_send(sender_fd, message_to_json(OP::LIST, Json::writeString(builder, v), "sever", sender));
 }
 void send_msg(const string &sender, const string &recver, const string &content, int sender_fd)
 {
