@@ -6,8 +6,8 @@
 #include "Error.h"
 using namespace std;
 #define CLIENT_COUNT 1024
+Json::StreamWriterBuilder builder;
 Json::Reader reader;
-Json::FastWriter fw;
 map<int, string> fd_to_name;
 map<string, int> name_to_fd;
 string get_user_name(int fd)
@@ -38,7 +38,7 @@ void add_user(int fd, const string &name)
             Json::Value obj;
             obj["data"] = 0;
             cout << "用户名存在" << endl;
-            s.m_send(fd, fw.write(obj));
+            s.m_send(fd, Json::writeString(builder, obj));
         }
         else
         {
@@ -47,7 +47,7 @@ void add_user(int fd, const string &name)
             Json::Value obj;
             obj["data"] = 1;
             cout << "登录成功" << endl;
-            s.m_send(fd, fw.write(obj));
+            s.m_send(fd, Json::writeString(builder, obj));
         }
     }
     else
@@ -55,7 +55,7 @@ void add_user(int fd, const string &name)
         Json::Value obj;
         obj["data"] = 0;
         cout << "重复登录" << endl;
-        s.m_send(fd, fw.write(obj));
+        s.m_send(fd, Json::writeString(builder, obj));
     }
 }
 void del_user(int fd, const string &name)
@@ -73,16 +73,19 @@ string message_to_json(const OP &cmd, const string &data, const string &sender, 
     v["sender"] = sender;
     v["recver"] = recver;
     v["error"] = error;
-    return fw.write(v);
+    return Json::writeString(builder, v);
 }
 void send_list(const string &sender, int sender_fd)
 {
-    string res = "";
+    Json::Value v;
+    cout << fd_to_name.size() << endl;
     for (auto ii = fd_to_name.begin(); ii != fd_to_name.end(); ++ii)
     {
-        res += ii->second + " ";
+        v.append(ii->second);
     }
-    s.m_send(sender_fd, message_to_json(OP::LIST, res, "sever", sender));
+    string str = Json::writeString(builder, v);
+    cout << str << endl;
+    s.m_send(sender_fd, message_to_json(OP::LIST, str, "sever", sender));
 }
 void send_msg(const string &sender, const string &recver, const string &content, int sender_fd)
 {
@@ -101,8 +104,14 @@ void send_msg(const string &sender, const string &recver, const string &content,
         s.m_send(sender_fd, message_to_json(OP::SEND_BACK, content, sender, recver, ERROR_CODE::NO_ERROR));
     }
 }
+void configJson()
+{
+    builder["indentation"] = "";
+    builder["emitUTF8"] = true;
+}
 int main()
 {
+    configJson();
     epoll_event ev;
     ev.data.fd = s.get_sever_fd();
     ev.events = EPOLLIN;
@@ -158,7 +167,6 @@ int main()
                     else if (v["cmd"].asInt() == OP::LIST)
                     {
                         cout << "列表指令" << endl;
-
                         send_list(fd_to_name[evs[i].data.fd], evs[i].data.fd);
                     }
                     else if (v["cmd"].asInt() == OP::SEND)
