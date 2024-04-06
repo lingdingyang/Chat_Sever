@@ -29,42 +29,6 @@ int get_user_fd(const string &name)
 int epollfd = epoll_create(1);
 MSever s(5050);
 epoll_event evs[CLIENT_COUNT];
-void add_user(int fd, const string &name)
-{
-    if (fd_to_name.find(fd) == fd_to_name.end())
-    {
-        if (name_to_fd.find(name) != name_to_fd.end())
-        {
-            Json::Value obj;
-            obj["data"] = 0;
-            cout << "用户名存在" << endl;
-            s.m_send(fd, Json::writeString(builder, obj));
-        }
-        else
-        {
-            fd_to_name[fd] = name;
-            name_to_fd[name] = fd;
-            Json::Value obj;
-            obj["data"] = 1;
-            cout << "登录成功" << endl;
-            s.m_send(fd, Json::writeString(builder, obj));
-        }
-    }
-    else
-    {
-        Json::Value obj;
-        obj["data"] = 0;
-        cout << "重复登录" << endl;
-        s.m_send(fd, Json::writeString(builder, obj));
-    }
-}
-void del_user(int fd, const string &name)
-{
-    name_to_fd.erase(name);
-    fd_to_name.erase(fd);
-    close(fd);
-    epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, 0);
-}
 string message_to_json(const OP &cmd, const string &data, const string &sender, const string &recver, const ERROR_CODE &error = ERROR_CODE::NO_ERROR)
 {
     Json::Value v;
@@ -84,6 +48,42 @@ void send_list(const string &sender, int sender_fd)
     }
     s.m_send(sender_fd, message_to_json(OP::LIST, Json::writeString(builder, v), "sever", sender));
 }
+void add_user(int fd, const string &name)
+{
+    if (fd_to_name.find(fd) == fd_to_name.end())
+    {
+        if (name_to_fd.find(name) != name_to_fd.end())
+        {
+            cout << "用户名存在" << endl;
+            s.m_send(fd, message_to_json(OP::LOGIN, "0", "sever", "", ERROR_CODE::USER_NAME_EXISTED));
+        }
+        else
+        {
+            fd_to_name[fd] = name;
+            name_to_fd[name] = fd;
+            cout << "登录成功" << endl;
+            s.m_send(fd, message_to_json(OP::LOGIN, "1", "sever", "", ERROR_CODE::NO_ERROR));
+            for (auto i = name_to_fd.begin(); i != name_to_fd.end(); ++i)
+            {
+                cout << "发送：" << i->first << endl;
+                send_list(i->first, i->second);
+            }
+        }
+    }
+    else
+    {
+        cout << "重复登录" << endl;
+        s.m_send(fd, message_to_json(OP::LOGIN, "0", "sever", "", ERROR_CODE::ALREADY_LOGIN));
+    }
+}
+void del_user(int fd, const string &name)
+{
+    name_to_fd.erase(name);
+    fd_to_name.erase(fd);
+    close(fd);
+    epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, 0);
+}
+
 void send_msg(const string &sender, const string &recver, const string &content, int sender_fd)
 {
     if (name_to_fd.find(recver) == name_to_fd.end())

@@ -1,5 +1,6 @@
 #include "MClient.h"
 #include "Cmd.h"
+#include"Error.h"
 #include <jsoncpp/json/json.h>
 #include <thread>
 using namespace std;
@@ -48,7 +49,7 @@ int main()
             return -1;
         }
         reader.parse(res, v);
-        if (v["data"] == 1)
+        if (v["error"] == ERROR_CODE::NO_ERROR)
         {
             cout << "登录成功" << endl;
             name = input;
